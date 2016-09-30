@@ -1,13 +1,18 @@
 $(document).ready(function() {
 
-    // "Select all" checkbox in a table header
-    $('th input:checkbox[name=_all]').click(function (event) {
-        $(this).parents('table').find('td input:checkbox').prop('checked', $(this).prop('checked'));
+    // "Toggle all" checkbox in a table header
+    $('#toggle_all').click(function (event) {
+        $('td input:checkbox[name=pk]').prop('checked', $(this).prop('checked'));
+        if ($(this).is(':checked')) {
+            $('#select_all_box').removeClass('hidden');
+        } else {
+            $('#select_all').prop('checked', false);
+        }
     });
-    // Uncheck the "select all" checkbox if an item is unchecked
+    // Uncheck the "toggle all" checkbox if an item is unchecked
     $('input:checkbox[name=pk]').click(function (event) {
         if (!$(this).attr('checked')) {
-            $(this).parents('table').find('input:checkbox[name=_all]').prop('checked', false);
+            $('#select_all, #toggle_all').prop('checked', false);
         }
     });
 
@@ -25,67 +30,12 @@ $(document).ready(function() {
     });
     if (slug_field) {
         var slug_source = $('#id_' + slug_field.attr('slug-source'));
-        slug_source.keyup(function() {
+        slug_source.on('keyup change', function() {
             if (slug_field && !slug_field.attr('_changed')) {
                 slug_field.val(slugify($(this).val(), 50));
             }
         })
     }
-
-    // Helper select fields
-    $('select.helper-parent').change(function () {
-
-        // Resolve child field by ID specified in parent
-        var child_field = $('#id_' + $(this).attr('child'));
-
-        // Wipe out any existing options within the child field
-        child_field.empty();
-        child_field.append($("<option></option>").attr("value", "").text(""));
-
-        // If the parent has a value set, fetch a list of child options via the API and populate the child field with them
-        if ($(this).val()) {
-
-            // Construct the API request URL
-            var api_url = $(this).attr('child-source');
-            var parent_accessor = $(this).attr('parent-accessor');
-            if (parent_accessor) {
-                api_url += '?' + parent_accessor + '=' + $(this).val();
-            } else {
-                api_url += '?' + $(this).attr('name') + '_id=' + $(this).val();
-            }
-            var api_url_extra = $(this).attr('child-filter');
-            if (api_url_extra) {
-                api_url += '&' + api_url_extra;
-            }
-
-            var disabled_indicator = $(this).attr('disabled-indicator');
-            var disabled_exempt = child_field.attr('exempt');
-            var child_display = $(this).attr('child-display');
-            if (!child_display) {
-                child_display = 'name';
-            }
-
-            $.ajax({
-                url: api_url,
-                dataType: 'json',
-                success: function (response, status) {
-                    console.log(response);
-                    $.each(response, function (index, choice) {
-                        var option = $("<option></option>").attr("value", choice.id).text(choice[child_display]);
-                        if (disabled_indicator && choice[disabled_indicator] && choice.id != disabled_exempt) {
-                            option.attr("disabled", "disabled")
-                        }
-                        child_field.append(option);
-                    });
-                }
-            });
-
-        }
-
-        // Trigger change event in case the child field is the parent of another field
-        child_field.change();
-
-    });
 
     // API select widget
     $('select[filter-for]').change(function () {

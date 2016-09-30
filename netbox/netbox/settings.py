@@ -12,7 +12,7 @@ except ImportError:
                                "the documentation.")
 
 
-VERSION = '1.5.3-dev'
+VERSION = '1.6.2-dev'
 
 # Import local configuration
 for setting in ['ALLOWED_HOSTS', 'DATABASE', 'SECRET_KEY']:
@@ -27,6 +27,9 @@ ADMINS = getattr(configuration, 'ADMINS', [])
 DEBUG = getattr(configuration, 'DEBUG', False)
 EMAIL = getattr(configuration, 'EMAIL', {})
 LOGIN_REQUIRED = getattr(configuration, 'LOGIN_REQUIRED', False)
+BASE_PATH = getattr(configuration, 'BASE_PATH', '')
+if BASE_PATH:
+    BASE_PATH = BASE_PATH.strip('/') + '/'  # Enforce trailing slash only
 MAINTENANCE_MODE = getattr(configuration, 'MAINTENANCE_MODE', False)
 PAGINATE_COUNT = getattr(configuration, 'PAGINATE_COUNT', 50)
 NETBOX_USERNAME = getattr(configuration, 'NETBOX_USERNAME', '')
@@ -71,7 +74,7 @@ if LDAP_CONFIGURED:
         logger.setLevel(logging.DEBUG)
     except ImportError:
         raise ImproperlyConfigured("LDAP authentication has been configured, but django-auth-ldap is not installed. "
-                                   "You can remove netbox/ldap.py to disable LDAP.")
+                                   "You can remove netbox/ldap_config.py to disable LDAP.")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

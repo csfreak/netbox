@@ -3,6 +3,7 @@ from collections import OrderedDict
 from django import forms
 from django.contrib.contenttypes.models import ContentType
 
+from utilities.forms import LaxURLField
 from .models import (
     CF_TYPE_BOOLEAN, CF_TYPE_DATE, CF_TYPE_INTEGER, CF_TYPE_SELECT, CF_TYPE_URL, CustomField, CustomFieldValue
 )
@@ -29,8 +30,8 @@ def get_custom_fields_for_model(content_type, filterable_only=False, bulk_edit=F
         elif cf.type == CF_TYPE_BOOLEAN:
             choices = (
                 (None, '---------'),
-                (True, 'True'),
-                (False, 'False'),
+                (1, 'True'),
+                (0, 'False'),
             )
             if cf.default.lower() in ['true', 'yes', '1']:
                 initial = True
@@ -47,18 +48,16 @@ def get_custom_fields_for_model(content_type, filterable_only=False, bulk_edit=F
 
         # Select
         elif cf.type == CF_TYPE_SELECT:
-            if bulk_edit:
-                choices = [(cfc.pk, cfc) for cfc in cf.choices.all()]
-                if not cf.required:
-                    choices = [(0, 'None')] + choices
+            choices = [(cfc.pk, cfc) for cfc in cf.choices.all()]
+            if not cf.required:
+                choices = [(0, 'None')] + choices
+            if bulk_edit or filterable_only:
                 choices = [(None, '---------')] + choices
-                field = forms.TypedChoiceField(choices=choices, coerce=int, required=cf.required)
-            else:
-                field = forms.ModelChoiceField(queryset=cf.choices.all(), required=cf.required)
+            field = forms.TypedChoiceField(choices=choices, coerce=int, required=cf.required)
 
         # URL
         elif cf.type == CF_TYPE_URL:
-            field = forms.URLField(required=cf.required, initial=cf.default)
+            field = LaxURLField(required=cf.required, initial=cf.default)
 
         # Text
         else:
@@ -94,7 +93,7 @@ class CustomFieldForm(forms.ModelForm):
             existing_values = CustomFieldValue.objects.filter(obj_type=self.obj_type, obj_id=self.instance.pk)\
                 .select_related('field')
             for cfv in existing_values:
-                self.initial['cf_{}'.format(str(cfv.field.name))] = cfv.value
+                self.initial['cf_{}'.format(str(cfv.field.name))] = cfv.serialized_value
 
     def _save_custom_fields(self):
 

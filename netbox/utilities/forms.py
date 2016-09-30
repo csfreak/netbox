@@ -1,8 +1,11 @@
 import csv
+import itertools
 import re
 
 from django import forms
+from django.conf import settings
 from django.core.urlresolvers import reverse_lazy
+from django.core.validators import URLValidator
 from django.utils.encoding import force_text
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -89,7 +92,7 @@ class APISelect(SelectWithDisabled):
         super(APISelect, self).__init__(*args, **kwargs)
 
         self.attrs['class'] = 'api-select'
-        self.attrs['api-url'] = api_url
+        self.attrs['api-url'] = '/{}{}'.format(settings.BASE_PATH, api_url.lstrip('/'))  # Inject BASE_PATH
         if display_field:
             self.attrs['display-field'] = display_field
         if disabled_indicator:
@@ -142,10 +145,14 @@ class CSVDataField(forms.CharField):
         if not self.help_text:
             self.help_text = 'Enter one line per record in CSV format.'
 
+    def utf_8_encoder(self, unicode_csv_data):
+        for line in unicode_csv_data:
+            yield line.encode('utf-8')
+
     def to_python(self, value):
         # Return a list of dictionaries, each representing an individual record
         records = []
-        reader = csv.reader(value.splitlines())
+        reader = csv.reader(self.utf_8_encoder(value.splitlines()))
         for i, row in enumerate(reader, start=1):
             if row:
                 if len(row) < len(self.columns):
@@ -220,6 +227,47 @@ class SlugField(forms.SlugField):
         help_text = kwargs.pop('help_text', "URL-friendly unique shorthand")
         super(SlugField, self).__init__(label=label, help_text=help_text, *args, **kwargs)
         self.widget.attrs['slug-source'] = slug_source
+
+
+class FilterChoiceField(forms.ModelMultipleChoiceField):
+    iterator = forms.models.ModelChoiceIterator
+
+    def __init__(self, null_option=None, *args, **kwargs):
+        self.null_option = null_option
+        if 'required' not in kwargs:
+            kwargs['required'] = False
+        if 'widget' not in kwargs:
+            kwargs['widget'] = forms.SelectMultiple(attrs={'size': 6})
+        super(FilterChoiceField, self).__init__(*args, **kwargs)
+
+    def label_from_instance(self, obj):
+        if hasattr(obj, 'filter_count'):
+            return u'{} ({})'.format(obj, obj.filter_count)
+        return force_text(obj)
+
+    def _get_choices(self):
+        if hasattr(self, '_choices'):
+            return self._choices
+        if self.null_option is not None:
+            return itertools.chain([self.null_option], self.iterator(self))
+        return self.iterator(self)
+
+    choices = property(_get_choices, forms.ChoiceField._set_choices)
+
+
+class LaxURLField(forms.URLField):
+    """
+    Custom URLField which allows any valid URL scheme
+    """
+
+    class AnyURLScheme(object):
+        # A fake URL list which "contains" all scheme names abiding by the syntax defined in RFC 3986 section 3.1
+        def __contains__(self, item):
+            if not item or not re.match('^[a-z][0-9a-z+\-.]*$', item.lower()):
+                return False
+            return True
+
+    default_validators = [URLValidator(schemes=AnyURLScheme())]
 
 
 #

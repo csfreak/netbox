@@ -67,7 +67,18 @@ ACTION_CHOICES = (
 
 class CustomFieldModel(object):
 
-    def custom_fields(self):
+    def cf(self):
+        """
+        Name-based CustomFieldValue accessor for use in templates
+        """
+        if not hasattr(self, 'get_custom_fields'):
+            return dict()
+        return {field.name: value for field, value in self.get_custom_fields().items()}
+
+    def get_custom_fields(self):
+        """
+        Return a dictionary of custom fields for a single object in the form {<field>: value}.
+        """
 
         # Find all custom fields applicable to this type of object
         content_type = ContentType.objects.get_for_model(self)
@@ -135,8 +146,10 @@ class CustomField(models.Model):
             # Read date as YYYY-MM-DD
             return date(*[int(n) for n in serialized_value.split('-')])
         if self.type == CF_TYPE_SELECT:
-            # return CustomFieldChoice.objects.get(pk=int(serialized_value))
-            return self.choices.get(pk=int(serialized_value))
+            try:
+                return self.choices.get(pk=int(serialized_value))
+            except CustomFieldChoice.DoesNotExist:
+                return None
         return serialized_value
 
 
@@ -187,6 +200,12 @@ class CustomFieldChoice(models.Model):
         if self.field.type != CF_TYPE_SELECT:
             raise ValidationError("Custom field choices can only be assigned to selection fields.")
 
+    def delete(self, using=None, keep_parents=False):
+        # When deleting a CustomFieldChoice, delete all CustomFieldValues which point to it
+        pk = self.pk
+        super(CustomFieldChoice, self).delete(using, keep_parents)
+        CustomFieldValue.objects.filter(field__type=CF_TYPE_SELECT, serialized_value=str(pk)).delete()
+
 
 class Graph(models.Model):
     type = models.PositiveSmallIntegerField(choices=GRAPH_TYPE_CHOICES)
@@ -214,7 +233,8 @@ class Graph(models.Model):
 
 class ExportTemplate(models.Model):
     content_type = models.ForeignKey(ContentType, limit_choices_to={'model__in': EXPORTTEMPLATE_MODELS})
-    name = models.CharField(max_length=200)
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=200, blank=True)
     template_code = models.TextField()
     mime_type = models.CharField(max_length=15, blank=True)
     file_extension = models.CharField(max_length=15, blank=True)
@@ -234,10 +254,10 @@ class ExportTemplate(models.Model):
         """
         template = Template(self.template_code)
         mime_type = 'text/plain' if not self.mime_type else self.mime_type
-        response = HttpResponse(
-            template.render(Context(context_dict)),
-            content_type=mime_type
-        )
+        output = template.render(Context(context_dict))
+        # Replace CRLF-style line terminators
+        output = output.replace('\r\n', '\n')
+        response = HttpResponse(output, content_type=mime_type)
         if self.file_extension:
             filename += '.{}'.format(self.file_extension)
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(filename)
