@@ -3,12 +3,13 @@ import re
 from django import forms
 from django.db.models import Count, Q
 
+from extras.forms import CustomFieldForm, CustomFieldBulkEditForm, CustomFieldFilterForm
 from ipam.models import IPAddress
 from tenancy.forms import bulkedit_tenant_choices
 from tenancy.models import Tenant
 from utilities.forms import (
     APISelect, add_blank_choice, BootstrapMixin, BulkImportForm, CommentField, CSVDataField, ExpandableNameField,
-    FlexibleModelChoiceField, Livesearch, SelectWithDisabled, SmallTextarea, SlugField,
+    FilterChoiceField, FlexibleModelChoiceField, Livesearch, SelectWithDisabled, SmallTextarea, SlugField,
 )
 
 from .models import (
@@ -78,7 +79,7 @@ def bulkedit_rackrole_choices():
 # Sites
 #
 
-class SiteForm(forms.ModelForm, BootstrapMixin):
+class SiteForm(BootstrapMixin, CustomFieldForm):
     slug = SlugField()
     comments = CommentField()
 
@@ -111,19 +112,15 @@ class SiteImportForm(BulkImportForm, BootstrapMixin):
     csv = CSVDataField(csv_form=SiteFromCSVForm)
 
 
-class SiteBulkEditForm(forms.Form, BootstrapMixin):
+class SiteBulkEditForm(BootstrapMixin, CustomFieldBulkEditForm):
     pk = forms.ModelMultipleChoiceField(queryset=Site.objects.all(), widget=forms.MultipleHiddenInput)
     tenant = forms.TypedChoiceField(choices=bulkedit_tenant_choices, coerce=int, required=False, label='Tenant')
 
 
-def site_tenant_choices():
-    tenant_choices = Tenant.objects.annotate(site_count=Count('sites'))
-    return [(t.slug, u'{} ({})'.format(t.name, t.site_count)) for t in tenant_choices]
-
-
-class SiteFilterForm(forms.Form, BootstrapMixin):
-    tenant = forms.MultipleChoiceField(required=False, choices=site_tenant_choices,
-                                       widget=forms.SelectMultiple(attrs={'size': 8}))
+class SiteFilterForm(BootstrapMixin, CustomFieldFilterForm):
+    model = Site
+    tenant = FilterChoiceField(queryset=Tenant.objects.annotate(filter_count=Count('sites')), to_field_name='slug',
+                               null_option=(0, 'None'))
 
 
 #
@@ -138,14 +135,8 @@ class RackGroupForm(forms.ModelForm, BootstrapMixin):
         fields = ['site', 'name', 'slug']
 
 
-def rackgroup_site_choices():
-    site_choices = Site.objects.annotate(rack_count=Count('rack_groups'))
-    return [(s.slug, u'{} ({})'.format(s.name, s.rack_count)) for s in site_choices]
-
-
 class RackGroupFilterForm(forms.Form, BootstrapMixin):
-    site = forms.MultipleChoiceField(required=False, choices=rackgroup_site_choices,
-                                     widget=forms.SelectMultiple(attrs={'size': 8}))
+    site = FilterChoiceField(queryset=Site.objects.annotate(filter_count=Count('rack_groups')), to_field_name='slug')
 
 
 #
@@ -164,7 +155,7 @@ class RackRoleForm(forms.ModelForm, BootstrapMixin):
 # Racks
 #
 
-class RackForm(forms.ModelForm, BootstrapMixin):
+class RackForm(BootstrapMixin, CustomFieldForm):
     group = forms.ModelChoiceField(queryset=RackGroup.objects.all(), required=False, label='Group', widget=APISelect(
         api_url='/api/dcim/rack-groups/?site_id={{site}}',
     ))
@@ -240,7 +231,7 @@ class RackImportForm(BulkImportForm, BootstrapMixin):
     csv = CSVDataField(csv_form=RackFromCSVForm)
 
 
-class RackBulkEditForm(forms.Form, BootstrapMixin):
+class RackBulkEditForm(BootstrapMixin, CustomFieldBulkEditForm):
     pk = forms.ModelMultipleChoiceField(queryset=Rack.objects.all(), widget=forms.MultipleHiddenInput)
     site = forms.ModelChoiceField(queryset=Site.objects.all(), required=False, label='Site')
     group = forms.TypedChoiceField(choices=bulkedit_rackgroup_choices, coerce=int, required=False, label='Group')
@@ -252,35 +243,15 @@ class RackBulkEditForm(forms.Form, BootstrapMixin):
     comments = CommentField()
 
 
-def rack_site_choices():
-    site_choices = Site.objects.annotate(rack_count=Count('racks'))
-    return [(s.slug, u'{} ({})'.format(s.name, s.rack_count)) for s in site_choices]
-
-
-def rack_group_choices():
-    group_choices = RackGroup.objects.select_related('site').annotate(rack_count=Count('racks'))
-    return [(g.pk, u'{} ({})'.format(g, g.rack_count)) for g in group_choices]
-
-
-def rack_tenant_choices():
-    tenant_choices = Tenant.objects.annotate(rack_count=Count('racks'))
-    return [(t.slug, u'{} ({})'.format(t.name, t.rack_count)) for t in tenant_choices]
-
-
-def rack_role_choices():
-    role_choices = RackRole.objects.annotate(rack_count=Count('racks'))
-    return [(r.slug, u'{} ({})'.format(r.name, r.rack_count)) for r in role_choices]
-
-
-class RackFilterForm(forms.Form, BootstrapMixin):
-    site = forms.MultipleChoiceField(required=False, choices=rack_site_choices,
-                                     widget=forms.SelectMultiple(attrs={'size': 8}))
-    group_id = forms.MultipleChoiceField(required=False, choices=rack_group_choices, label='Rack Group',
-                                         widget=forms.SelectMultiple(attrs={'size': 8}))
-    tenant = forms.MultipleChoiceField(required=False, choices=rack_tenant_choices,
-                                       widget=forms.SelectMultiple(attrs={'size': 8}))
-    role = forms.MultipleChoiceField(required=False, choices=rack_role_choices,
-                                     widget=forms.SelectMultiple(attrs={'size': 8}))
+class RackFilterForm(BootstrapMixin, CustomFieldFilterForm):
+    model = Rack
+    site = FilterChoiceField(queryset=Site.objects.annotate(filter_count=Count('racks')), to_field_name='slug')
+    group_id = FilterChoiceField(queryset=RackGroup.objects.select_related('site')
+                                 .annotate(filter_count=Count('racks')), label='Rack group', null_option=(0, 'None'))
+    tenant = FilterChoiceField(queryset=Tenant.objects.annotate(filter_count=Count('racks')), to_field_name='slug',
+                               null_option=(0, 'None'))
+    role = FilterChoiceField(queryset=RackRole.objects.annotate(filter_count=Count('racks')), to_field_name='slug',
+                             null_option=(0, 'None'))
 
 
 #
@@ -314,14 +285,9 @@ class DeviceTypeBulkEditForm(forms.Form, BootstrapMixin):
     u_height = forms.IntegerField(min_value=1, required=False)
 
 
-def devicetype_manufacturer_choices():
-    manufacturer_choices = Manufacturer.objects.annotate(devicetype_count=Count('device_types'))
-    return [(m.slug, u'{} ({})'.format(m.name, m.devicetype_count)) for m in manufacturer_choices]
-
-
 class DeviceTypeFilterForm(forms.Form, BootstrapMixin):
-    manufacturer = forms.MultipleChoiceField(required=False, choices=devicetype_manufacturer_choices,
-                                             widget=forms.SelectMultiple(attrs={'size': 8}))
+    manufacturer = FilterChoiceField(queryset=Manufacturer.objects.annotate(filter_count=Count('device_types')),
+                                     to_field_name='slug')
 
 
 #
@@ -404,7 +370,7 @@ class PlatformForm(forms.ModelForm, BootstrapMixin):
 # Devices
 #
 
-class DeviceForm(forms.ModelForm, BootstrapMixin):
+class DeviceForm(BootstrapMixin, CustomFieldForm):
     site = forms.ModelChoiceField(queryset=Site.objects.all(), widget=forms.Select(attrs={'filter-for': 'rack'}))
     rack = forms.ModelChoiceField(queryset=Rack.objects.all(), widget=APISelect(
         api_url='/api/dcim/racks/?site_id={{site}}',
@@ -613,7 +579,7 @@ class ChildDeviceImportForm(BulkImportForm, BootstrapMixin):
     csv = CSVDataField(csv_form=ChildDeviceFromCSVForm)
 
 
-class DeviceBulkEditForm(forms.Form, BootstrapMixin):
+class DeviceBulkEditForm(BootstrapMixin, CustomFieldBulkEditForm):
     pk = forms.ModelMultipleChoiceField(queryset=Device.objects.all(), widget=forms.MultipleHiddenInput)
     device_type = forms.ModelChoiceField(queryset=DeviceType.objects.all(), required=False, label='Type')
     device_role = forms.ModelChoiceField(queryset=DeviceRole.objects.all(), required=False, label='Role')
@@ -624,48 +590,18 @@ class DeviceBulkEditForm(forms.Form, BootstrapMixin):
     serial = forms.CharField(max_length=50, required=False, label='Serial Number')
 
 
-def device_site_choices():
-    site_choices = Site.objects.annotate(device_count=Count('racks__devices'))
-    return [(s.slug, u'{} ({})'.format(s.name, s.device_count)) for s in site_choices]
-
-
-def device_rack_group_choices():
-    group_choices = RackGroup.objects.select_related('site').annotate(device_count=Count('racks__devices'))
-    return [(g.pk, u'{} ({})'.format(g, g.device_count)) for g in group_choices]
-
-
-def device_role_choices():
-    role_choices = DeviceRole.objects.annotate(device_count=Count('devices'))
-    return [(r.slug, u'{} ({})'.format(r.name, r.device_count)) for r in role_choices]
-
-
-def device_tenant_choices():
-    tenant_choices = Tenant.objects.annotate(device_count=Count('devices'))
-    return [(t.slug, u'{} ({})'.format(t.name, t.device_count)) for t in tenant_choices]
-
-
-def device_type_choices():
-    type_choices = DeviceType.objects.select_related('manufacturer').annotate(device_count=Count('instances'))
-    return [(t.pk, u'{} ({})'.format(t, t.device_count)) for t in type_choices]
-
-
-def device_platform_choices():
-    platform_choices = Platform.objects.annotate(device_count=Count('devices'))
-    return [(p.slug, u'{} ({})'.format(p.name, p.device_count)) for p in platform_choices]
-
-
-class DeviceFilterForm(forms.Form, BootstrapMixin):
-    site = forms.MultipleChoiceField(required=False, choices=device_site_choices,
-                                     widget=forms.SelectMultiple(attrs={'size': 8}))
-    rack_group_id = forms.MultipleChoiceField(required=False, choices=device_rack_group_choices, label='Rack Group',
-                                              widget=forms.SelectMultiple(attrs={'size': 8}))
-    role = forms.MultipleChoiceField(required=False, choices=device_role_choices,
-                                     widget=forms.SelectMultiple(attrs={'size': 8}))
-    tenant = forms.MultipleChoiceField(required=False, choices=device_tenant_choices,
-                                       widget=forms.SelectMultiple(attrs={'size': 8}))
-    device_type_id = forms.MultipleChoiceField(required=False, choices=device_type_choices, label='Type',
-                                               widget=forms.SelectMultiple(attrs={'size': 8}))
-    platform = forms.MultipleChoiceField(required=False, choices=device_platform_choices)
+class DeviceFilterForm(BootstrapMixin, CustomFieldFilterForm):
+    model = Device
+    site = FilterChoiceField(queryset=Site.objects.annotate(filter_count=Count('racks__devices')), to_field_name='slug')
+    rack_group_id = FilterChoiceField(queryset=Site.objects.annotate(filter_count=Count('racks__devices')),
+                                      label='Rack Group')
+    role = FilterChoiceField(queryset=DeviceRole.objects.annotate(filter_count=Count('devices')), to_field_name='slug')
+    tenant = FilterChoiceField(queryset=Tenant.objects.annotate(filter_count=Count('devices')), to_field_name='slug',
+                               null_option=(0, 'None'))
+    device_type_id = FilterChoiceField(queryset=DeviceType.objects.select_related('manufacturer')
+                                       .annotate(filter_count=Count('instances')), label='Type')
+    platform = FilterChoiceField(queryset=Platform.objects.annotate(filter_count=Count('devices')),
+                                 to_field_name='slug', null_option=(0, 'None'))
     status = forms.NullBooleanField(required=False, widget=forms.Select(choices=FORM_STATUS_CHOICES))
 
 

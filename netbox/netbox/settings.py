@@ -12,7 +12,7 @@ except ImportError:
                                "the documentation.")
 
 
-VERSION = '1.5.2'
+VERSION = '1.6.1-r1'
 
 # Import local configuration
 for setting in ['ALLOWED_HOSTS', 'DATABASE', 'SECRET_KEY']:
@@ -71,7 +71,7 @@ if LDAP_CONFIGURED:
         logger.setLevel(logging.DEBUG)
     except ImportError:
         raise ImproperlyConfigured("LDAP authentication has been configured, but django-auth-ldap is not installed. "
-                                   "You can remove netbox/ldap.py to disable LDAP.")
+                                   "You can remove netbox/ldap_config.py to disable LDAP.")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -163,6 +163,9 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = (
     os.path.join(BASE_DIR, "project-static"),
 )
+
+# Disable default limit of 1000 fields per request. Needed for bulk deletion of objects. (Added in Django 1.10.)
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
 # Messages
 MESSAGE_TAGS = {
